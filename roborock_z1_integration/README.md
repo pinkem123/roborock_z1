@@ -1,28 +1,49 @@
 # Roborock Z1 Mower — Home Assistant Integration
 
-Custom integration for the Roborock Z1 robot lawn mower (`roborock.mower.a282`), built on python-roborock and Roborock's cloud MQTT. Provides a native `lawn_mower` entity (Start / Pause / Return to dock) plus battery, mowing-progress, and blade-lifespan sensors.
+Custom integration for the Roborock Z1 robot lawn mower (`roborock.mower.a282`), built on python-roborock and Roborock's cloud MQTT. Provides a native `lawn_mower` entity (Start / Pause / Return to dock) plus battery, mowing-progress, blade-lifespan, and raw-state sensors. Tested working on real hardware (2026).
 
-Tested working on a real Z1 (July 2026). The official `roborock` integration does not support mowers yet — when it does (see python-roborock issue #757), migrate to it.
+The official `roborock` integration does not support mowers yet — when it does (see python-roborock issue #757), migrate to it.
 
 ## Install
 
 1. Copy `custom_components/roborock_z1/` into `config/custom_components/`.
-2. Restart Home Assistant.
+2. Restart Home Assistant (installs `python-roborock==5.25.0` automatically).
 3. Settings → Devices & Services → Add Integration → **Roborock Z1 Mower**.
 4. Log in with your Roborock account email + emailed verification code.
 
-Home data is cached in the config entry after the first fetch (Roborock rate-limits that endpoint aggressively). Added a new device to your account? Delete and re-add the integration.
+Home data is cached in the config entry after the first fetch (Roborock rate-limits that endpoint aggressively). Added a new device? Delete and re-add the integration.
 
-## Protocol notes (discovered on a real device)
+## Protocol notes (established on real hardware)
 
-The Z1 reports `pv=1.0` and communicates over Roborock's cloud MQTT using the classic V1 message framing, with mower-specific semantics:
+The Z1 reports `pv=1.0` and speaks Roborock's classic V1 framing over cloud MQTT:
 
-- **Status polling:** the V1 RPC `get_status` is answered, but only with a legacy placeholder `{msg_ver, msg_seq, state: 0, battery: 0}`. The integration polls it as a heartbeat and discards the placeholder.
-- **Real telemetry** arrives as unsolicited dps push updates using codes 120–145 (matching python-roborock's `RoborockMowerDataProtocol` / `MowerStatus`): battery=121, mow_state=123, mow_start_type=132, mow_progress=139, blade_lifespan=140, ...
-- **Commands are dps writes, not RPC methods** (named methods like `app_start` return `unknown_method`). Confirmed working: START `{"dps":{"201":1}}` and DOCK `{"dps":{"202":1}}`; PAUSE (203) and RESUME (204) use the same pattern.
-- Sensors restore their last value across HA restarts, since the mower only pushes on change.
+- **`get_status`** answers only with a legacy placeholder `{msg_ver, msg_seq, state: 0, battery: 0}` — polled every 60 s as a heartbeat and discarded. (`app_get_init_status` also answers, with firmware/region info.)
+- **Real telemetry** arrives as unsolicited dps push updates using codes 120–145 (python-roborock's `RoborockMowerDataProtocol` / `MowerStatus`): battery=121, mow_state=123, mow_progress=139, blade_lifespan=140, …
+- **Commands are dps writes, not RPC methods** (named methods return `unknown_method`). Confirmed: START `{"dps":{"201":1}}`, DOCK 202; PAUSE 203 / RESUME 204 use the same pattern.
+- **Connection watchdog:** the heartbeat guarantees ≥1 message/min on a healthy link; after 5 min of silence the MQTT session is force-restarted (the library's own reconnect backoff can reach 6 h), after 15 min the integration reloads itself. Entities show unavailable while stale.
+- Sensors restore their last value across HA restarts.
+- Undiscovered reply formats surface automatically as `New RPC payload shape` warnings in the default log.
 
-`MOW_STATE_TO_ACTIVITY` in `const.py` maps `mow_state` codes to HA activities. Only `0 = docked/idle` is confirmed by observation; the rest are provisional. Watch the `mow_state_raw` attribute on the mower entity while it mows / pauses / returns and adjust the map.
+### mow_state codes (fw A.03.0894_CE)
+
+| Code | Meaning | Entity activity |
+|---|---|---|
+| 0 | Idle / no active task (also during return trip) | Docked |
+| 51 | Calibrate position | Mowing |
+| 52 | Leaving dock | Mowing |
+| 55 | Mowing | Mowing |
+| 56 | Edge cutting | Mowing |
+| 57 | Moving to another destination | Mowing |
+| 59 | Mower stuck | Error |
+| 61 | Paused Raining | Paused |
+| 66 | Failed to return to charging station | Error |
+| 67 | Mower overturned | Error |
+
+Observed but not yet decoded: 58, 76, 77 (display as "unknown"). Human-readable texts are exposed as the mower entity's `state_description` attribute — handy for notifications.
+
+## Integration icon
+
+Entity icons are built in (`icons.json`). The Integrations-page brand logo is served locally from `custom_components/roborock_z1/brand/` (official Roborock brand images). Requires **Home Assistant 2026.3.0+**. No brands-repository submission needed.
 
 ## Debugging
 
@@ -32,20 +53,6 @@ logger:
     custom_components.roborock_z1: debug
 ```
 
-Debug logging shows every message with its raw payload.
-
 ## Contributing upstream
 
-These findings (V1 framing on a mower, the get_status placeholder, dps-write commands 201/202) are not documented anywhere upstream. Consider sharing your traces at https://github.com/Python-roborock/python-roborock/issues/757 — it directly helps official Home Assistant support for the Z1.
-
-## Integration icon
-
-Entity icons are built in (`icons.json`): robot-mower for the mower entity, plus themed icons for progress, blade lifespan, and the raw state sensor.
-
-The brand logo on the Integrations page cannot be shipped inside a custom component — Home Assistant only serves those from the central [home-assistant/brands](https://github.com/home-assistant/brands) repository. Ready-made files are included in `brands/roborock_z1/`: the official Roborock brand images (icon 256/512 + wordmark logo 256/512), taken from the brands repo's own `core_integrations/roborock` so this integration matches the core Roborock integration's look. To get the logo showing:
-
-1. Fork https://github.com/home-assistant/brands
-2. Copy `brands/roborock_z1/` into `custom_integrations/roborock_z1/` in the fork
-3. Open a PR — once merged, the icon appears automatically (no integration update needed)
-
-Until then HA shows a generic placeholder; purely cosmetic.
+These findings are not documented anywhere upstream. Consider sharing at https://github.com/Python-roborock/python-roborock/issues/757 — it directly helps official Home Assistant support for the Z1.
