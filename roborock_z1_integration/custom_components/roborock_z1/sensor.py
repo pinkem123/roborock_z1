@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, PERCENTAGE
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfLength
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -51,10 +51,14 @@ SENSORS: tuple[Z1SensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda s: s.blade_lifespan,
     ),
+    Z1SensorDescription(
+        key="mow_height",
+        translation_key="mow_height",
+        native_unit_of_measurement=UnitOfLength.MILLIMETERS,
+        value_fn=lambda s: s.mow_height,
+    ),
     # Raw mow_state code as reported by the mower. Its recorded history is
-    # the easiest way to map the Z1's undocumented state codes: run a mowing
-    # session, then read the values off this sensor's history graph and
-    # adjust MOW_STATE_TO_ACTIVITY in const.py.
+    # the easiest way to map undocumented state codes.
     Z1SensorDescription(
         key="mow_state",
         translation_key="mow_state_raw",
@@ -83,7 +87,9 @@ class RoborockZ1Sensor(RestoreSensor):
     _attr_should_poll = False
     entity_description: Z1SensorDescription
 
-    def __init__(self, device: RockMowZ1Device, description: Z1SensorDescription) -> None:
+    def __init__(
+        self, device: RockMowZ1Device, description: Z1SensorDescription
+    ) -> None:
         self._device = device
         self.entity_description = description
         self._attr_unique_id = f"{device.duid}_{description.key}"

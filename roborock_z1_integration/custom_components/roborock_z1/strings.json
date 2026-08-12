@@ -23,7 +23,8 @@
     "sensor": {
       "mow_progress": { "name": "Mowing progress" },
       "blade_lifespan": { "name": "Blade lifespan" },
-      "mow_state_raw": { "name": "Mower state (raw code)" }
+      "mow_state_raw": { "name": "Mower state (raw code)" },
+      "mow_height": { "name": "Cutting height" }
     }
   }
 }

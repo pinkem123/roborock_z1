@@ -6,7 +6,8 @@
     "sensor": {
       "mow_progress": { "default": "mdi:progress-check" },
       "blade_lifespan": { "default": "mdi:saw-blade" },
-      "mow_state_raw": { "default": "mdi:state-machine" }
+      "mow_state_raw": { "default": "mdi:state-machine" },
+      "mow_height": { "default": "mdi:arrow-expand-vertical" }
     }
   }
 }
